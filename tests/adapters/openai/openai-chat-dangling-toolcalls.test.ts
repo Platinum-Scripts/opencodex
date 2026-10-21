@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseRequest } from "../../../src/responses/parser";
 import { createOpenAIChatAdapter } from "../../../src/adapters/openai-chat";
 import type { OcxMessage, OcxParsedRequest, OcxProviderConfig } from "../../../src/types";
 
@@ -24,16 +25,17 @@ interface ChatMsg {
   content?: unknown;
   tool_calls?: { id: string; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
+  reasoning_content?: string;
 }
 
-function wire(messages: OcxMessage[]): ChatMsg[] {
+function wire(messages: OcxMessage[], destination: OcxProviderConfig = provider): ChatMsg[] {
   const parsed: OcxParsedRequest = {
     modelId: "test-model",
     context: { messages },
     stream: false,
     options: {},
   };
-  const req = createOpenAIChatAdapter(provider).buildRequest(parsed) as { body: string };
+  const req = createOpenAIChatAdapter(destination).buildRequest(parsed) as { body: string };
   return (JSON.parse(req.body) as { messages: ChatMsg[] }).messages;
 }
 
@@ -231,5 +233,55 @@ describe("openai-chat dangling tool_calls hardening", () => {
     expect(text).toContain("execution status unknown");
     expect(text).toContain("user-provided input");
     expect(text).not.toContain("interrupted");
+  });
+
+  test("native Responses assistant text cannot replace a later real tool result", () => {
+    const input = [
+      { type: "function_call", call_id: "call_a", name: "lookup", arguments: '{"q":"x"}', status: "completed" },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "note" }] },
+      { type: "function_call_output", call_id: "call_a", output: "ok" },
+    ];
+    const snapshot = structuredClone(input);
+    const parsed = parseRequest({ model: "test-model", tools: [{ type: "function", name: "lookup", parameters: { type: "object" } }], input });
+    const messages = wire(parsed.context.messages);
+    assertWireInvariants(messages);
+    expect(messages.flatMap(m => m.tool_calls ?? [])).toEqual([
+      { id: "call_a", type: "function", function: { name: "lookup", arguments: '{"q":"x"}' } },
+    ]);
+    expect(messages.filter(m => m.role === "tool")).toEqual([{ role: "tool", tool_call_id: "call_a", content: "ok" }]);
+    expect(messages.at(-1)).toEqual({ role: "assistant", content: "note" });
+    expect(JSON.stringify(messages)).not.toContain("no tool result was recorded");
+    expect(input).toEqual(snapshot);
+  });
+
+  test("parallel results retain text and reasoning barriers after the complete batch", () => {
+    const messages = wire([
+      assistantWithCalls([{ id: "call_a", name: "lookup" }, { id: "call_b", name: "other" }]),
+      assistantWithCalls([], "note"),
+      toolResult("call_b", "other", "second result"),
+      { role: "assistant", content: [{ type: "thinking", thinking: "retained thought" }], timestamp: 0 },
+      toolResult("call_a", "lookup", "first result"),
+    ], { ...provider, preserveReasoningContentModels: ["test-model"], requiresReasoningPlaceholderModels: [] });
+    assertWireInvariants(messages);
+    expect(messages.map(m => m.role)).toEqual(["assistant", "tool", "tool", "assistant", "assistant"]);
+    expect(messages.slice(1, 3).map(m => m.content)).toEqual(["second result", "first result"]);
+    expect(messages[3]).toEqual({ role: "assistant", content: "note" });
+    expect(messages[4].reasoning_content).toBe("retained thought");
+    expect(JSON.stringify(messages)).not.toContain("no tool result was recorded");
+  });
+
+  test("a new tool-call batch still settles an unresolved predecessor before deferred text", () => {
+    const messages = wire([
+      assistantWithCalls([{ id: "old", name: "lookup" }]),
+      assistantWithCalls([], "note"),
+      assistantWithCalls([{ id: "new", name: "other" }]),
+      toolResult("new", "other", "new result"),
+    ]);
+    assertWireInvariants(messages);
+    expect(messages.map(m => m.role)).toEqual(["assistant", "tool", "assistant", "assistant", "tool"]);
+    expect(messages[1].tool_call_id).toBe("old");
+    expect(String(messages[1].content)).toContain("no tool result was recorded");
+    expect(messages[2].content).toBe("note");
+    expect(messages[4]).toEqual({ role: "tool", tool_call_id: "new", content: "new result" });
   });
 });

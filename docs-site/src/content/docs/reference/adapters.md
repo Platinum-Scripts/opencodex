@@ -54,6 +54,10 @@ transport; it does not infer subscription attribution from the inbound protocol.
 
 - Converts internal messages to OpenAI roles; maps tools to `{type:"function", function:{…}}` and
   `tool_choice` (`auto`/`none`/`required` or a named function).
+- Real tool results remain attached to their original calls when user/developer messages or assistant
+  text/reasoning appear before the results. These messages are deferred until the pending tool round
+  closes. A new tool-call batch or the end of history synthesizes unknown-status results only for
+  calls that remain unanswered.
 - **Tool-result images** ride in a follow-up user vision message (`image_url` parts) released once
   the tool round closes, since `role:"tool"` content is text-only; the `[image]` marker stays in the
   tool message as the anchor.

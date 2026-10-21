@@ -324,6 +324,13 @@ export function messagesToChatFormat(parsed: OcxParsedRequest, provider: OcxProv
         // its slot so templates that require strict user/assistant alternation still accept it.
         const carriesNothing = !chatMsg.content && toolCalls.length === 0 && !hasReplayedReasoning;
         if (carriesNothing && (chatMsg.content === undefined || pendingToolCalls.length > 0)) break;
+        // Responses can place assistant commentary between a call and its real result.
+        // Keep that result attached to its original call, as for user/developer barriers.
+        if (pendingToolCalls.length > 0 && toolCalls.length === 0) {
+          if (hasReplayedReasoning && chatMsg.content === undefined) chatMsg.content = emptyAssistantContent(provider);
+          deferredBarrierMessages.push(chatMsg);
+          break;
+        }
         flushPendingToolCalls();
         const wireToolCalls = toolCalls.map(tc => {
           let id = tc.id;

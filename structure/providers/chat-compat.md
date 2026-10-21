@@ -119,7 +119,7 @@ native caller field exactly. Native passthrough also sanitizes routed reasoning 
 non-empty `content` arrays to upstream models that reject them. Chat Completions bridging repairs
 orphan `toolResult` messages by inserting a synthetic assistant `tool_call` before tool messages.
 It also repairs the opposite direction (260718): an assistant `tool_calls` round left dangling —
-by an intervening user/developer barrier or an interrupted turn — is closed by deferring barrier
+by intervening user/developer messages, assistant text/thinking without new calls, or an interrupted turn — is closed by deferring barrier
 messages until the round completes, reattaching real results to their original call occurrence,
 and synthesizing explicit "no tool result was recorded" answers only when no real result exists
 (Kimi/Moonshot 400 `ocx-mrqaiw05-269`; unit `devlog/_fin/260718_dangling_toolcall_hardening`).
