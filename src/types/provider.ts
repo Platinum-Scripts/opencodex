@@ -290,6 +290,8 @@ export interface ModelCapabilities {
   video?: { processing?: "static" | "agentic" };
   /** Opt in exact first-party DeepSeek models to one-hour image file persistence. */
   deepseekImageFiles?: boolean;
+  /** Exact-model Responses custom-tool support; absent inherits the provider contract. */
+  responsesCustomTools?: boolean;
 }
 
 export interface OcxProviderConfig {

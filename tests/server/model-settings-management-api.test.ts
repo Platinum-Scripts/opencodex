@@ -173,6 +173,7 @@ describe("per-model settings API", () => {
       modelId: MODEL,
       contextWindow: 262_144,
       inputModalities: ["text", "image"],
+      responsesCustomTools: false,
       reasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
     });
@@ -183,6 +184,7 @@ describe("per-model settings API", () => {
       modelId: MODEL,
       contextWindow: 262_144,
       inputModalities: ["text", "image"],
+      responsesCustomTools: false,
       reasoningEfforts: ["low", "medium", "high"],
       defaultReasoningEffort: "medium",
       changed: true,
@@ -191,7 +193,7 @@ describe("per-model settings API", () => {
     });
     const provider = h.config.providers[PROVIDER]!;
     expect(provider.modelContextWindows).toEqual({ [MODEL]: 262_144 });
-    expect(provider.modelCapabilities).toEqual({ [MODEL]: { inputModalities: ["text", "image"] } });
+    expect(provider.modelCapabilities).toEqual({ [MODEL]: { inputModalities: ["text", "image"], responsesCustomTools: false } });
     expect(provider.modelReasoningEfforts).toEqual({ [MODEL]: ["low", "medium", "high"] });
     expect(provider.modelDefaultReasoningEfforts).toEqual({ [MODEL]: "medium" });
     expect(h.persisted).toHaveLength(1);

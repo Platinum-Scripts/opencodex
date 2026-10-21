@@ -141,6 +141,7 @@ import { requiresPlaintextReasoningReplay } from "../../adapters/openai-response
 import { destinationDecodesNativeCompactionBlob, isOpenAiOperatedResponsesDestination } from "../../providers/openai-tiers-destination";
 import { bindRouteReasoningReplayScope } from "./core-replay";
 import { commitReasoningReplayServingIdentity } from "../../responses/reasoning-replay-cache";
+import { rewriteRoutedCustomToolsForUpstream, validateFinalCustomToolCompatibility } from "../../responses/custom-tool-compat";
 import { nativeCompactResponseSchema } from "../../responses/schema";
 import { NATIVE_RESERVE_MODEL } from "../../codex/catalog/native-models";
 import {
@@ -865,7 +866,9 @@ export async function handleResponsesCompact(
     // Resolve the SAME pool/thread auth context as /v1/responses — forwarding the caller's raw
     // headers would run compaction on the wrong account (or 401) whenever a pool account is
     // active for this thread while normal turns succeed.
-    let compactProvider = route.provider;
+    let compactProvider = resolveWireProtocolOverride(
+      route.providerName, route.modelId, route.provider, "responses", route.staticPolicy,
+    );
     let headers = new Headers({ "content-type": "application/json" });
     try {
       if (route.codexAccountMode || customReserveForward) {
@@ -1127,6 +1130,9 @@ export async function handleResponsesCompact(
       sendAuthCtx: CodexAuthContext,
       onPhysicalDispatch?: () => void,
     ): Promise<Response> => {
+      sendProvider = resolveWireProtocolOverride(
+        route.providerName, route.modelId, sendProvider, "responses", route.staticPolicy,
+      );
       // A gateway send carries only its own transport headers, whatever recovery handed in.
       let wireHeaders = gatewayTransport ? new Headers(gatewayTransport.headers) : sendHeaders;
       sendHeaders = wireHeaders;
@@ -1154,8 +1160,15 @@ export async function handleResponsesCompact(
         if (!isOpenAiOperatedResponsesDestination(sendProvider) && sendProvider.preserveResponsesMessageMetadata !== true) {
           replayBody = stripInternalChatMessageMetadataPassthrough(replayBody) as typeof replayBody;
         }
-        return isOpenAiOperatedResponsesDestination(sendProvider)
+        replayBody = isOpenAiOperatedResponsesDestination(sendProvider)
           ? replayBody : stripCanonicalOnlyTopLevelFields(replayBody);
+        if (!isCanonicalOpenAiForwardProvider(sendProvider)) {
+          replayBody = rewriteRoutedCustomToolsForUpstream(
+            replayBody, sendProvider.supportsResponsesCustomTools,
+          ).body as typeof replayBody;
+          validateFinalCustomToolCompatibility(replayBody, sendProvider.supportsResponsesCustomTools);
+        }
+        return replayBody;
       };
       const doFetch = (upstreamRecovery?: UpstreamSendRecovery) => fetchWithHeaderTimeout(
         compactUrl,
@@ -1186,6 +1199,9 @@ export async function handleResponsesCompact(
                 if (!current?.apiKey || !supportsNativeResponsesCompactEndpoint(route.providerName, current)) {
                   throw new Error("Provider key selection is no longer available for compact");
                 }
+                current = resolveWireProtocolOverride(
+                  route.providerName, route.modelId, current, "responses", route.staticPolicy,
+                );
                 const rebuilt = new Headers(sendHeaders);
                 for (const name of Object.keys(sendProvider.headers ?? {})) rebuilt.delete(name);
                 for (const [name, value] of Object.entries(current.headers ?? {})) rebuilt.set(name, value);
