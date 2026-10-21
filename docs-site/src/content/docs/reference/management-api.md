@@ -538,12 +538,12 @@ can still fail when a recorded session has no surviving rollout file.
 | `PUT /api/model-settings` | Edit one routed model's capability axes in place | 400 missing provider/modelId, unknown or native/combo provider, malformed field, unknown field, non-exact model id, or an invalid default effort for the resulting ladder; 500 when the config could not be saved (live config left unchanged) |
 
 `PUT /api/model-settings` takes `{ provider, modelId }` plus any of `contextWindow`,
-`inputModalities`, `reasoningEfforts`, and `defaultReasoningEffort`. It writes the
+`inputModalities`, `responsesCustomTools`, `reasoningEfforts`, and `defaultReasoningEffort`. It writes the
 provider-level per-model maps the runtime already reads (`modelContextWindows`,
-`modelCapabilities.<modelId>.inputModalities`, `modelReasoningEfforts`,
+`modelCapabilities.<modelId>.inputModalities`, `modelCapabilities.<modelId>.responsesCustomTools`, `modelReasoningEfforts`,
 `modelDefaultReasoningEfforts`), so an edited row keeps its discovery provenance instead of
 being replaced by a custom model. `inputModalities` accepts `text`, `image`, and `audio`;
-`reasoningEfforts` must be a subset of the efforts the runtime knows. Unknown request fields
+`responsesCustomTools` accepts a boolean or `null` to inherit the provider setting. `reasoningEfforts` must be a subset of the efforts the runtime knows. Unknown request fields
 are rejected by name. `modelId` must be exact, without surrounding whitespace, control
 characters, excessive length, or a reserved object-property name. `contextWindow` must be
 `null` or a positive safe integer.
