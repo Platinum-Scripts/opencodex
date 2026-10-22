@@ -14,7 +14,8 @@ they do not authenticate payload bytes, completion, execution permission or vend
 metadata. `src/server/responses/request-prepare.ts` applies the pass before `parseRequest`. It keeps unique
 real results and forms the buffered semantic-items/calls/results ordering only
 for authenticated closed spans. Invalid signed groups leave the entire input
-unchanged. No key is generated, restored from customer history or written to disk.
+unchanged. The codec copies supplied key bytes independently of typed-array subclasses,
+so clearing a caller-owned Buffer does not mutate the signing key. No key is generated, restored from customer history or written to disk.
 The absent/malformed-key default changes no input. The pass uses bounded linear
 indexing with at most 65,536 input items and retains existing item references.
 

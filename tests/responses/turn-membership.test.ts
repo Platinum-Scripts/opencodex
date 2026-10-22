@@ -97,6 +97,11 @@ test('captured scope and key bytes cannot change after epoch creation',()=>{
  const call={type:'function_call',id:epoch.next('function_call'),call_id:'stable_call',name:'lookup',arguments:'{}'},message={type:'message',id:epoch.next('message'),role:'assistant',content:[]},result={type:'function_call_output',call_id:'stable_call',output:'ok'};
  expect(c.normalize(scope,[call,message,result])).toEqual([message,call,result]);
 });
+test('Buffer signing material is copied independently of caller storage',()=>{
+ const material=Buffer.from(key),c=new TurnTokenCodec(new Map([['k1',material]]),'k1');
+ const {call,message,result}=fixture(c);material.fill(0);
+ expect(c.normalize(scope,[call,message,result])).toEqual([message,call,result]);
+});
 test('missing keys and absent trusted scope cannot mint membership',()=>{
  expect(()=>new TurnTokenCodec(new Map(),'k1')).toThrow();expect(()=>codec().begin({thread:'x'})).toThrow();
 });

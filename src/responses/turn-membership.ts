@@ -14,6 +14,7 @@ const pattern=/^(msg|fc|ctc|tsc|rs|ws)_ocxt1_([A-Za-z0-9]{1,12})_([A-Za-z0-9_-]{
 const resultTypes=new Set(['function_call_output','custom_tool_call_output','tool_search_output']);
 const resultType=(type:unknown)=>type==='function_call'?'function_call_output':type==='custom_tool_call'?'custom_tool_call_output':'tool_search_output';
 type Member={item:Item;position:number;ordinal:number};
+/** Reorder only closed authenticated spans while retaining every original payload object. */
 function normalizeGroups(input:unknown[],groups:Member[][]):unknown[]{
  type Occurrence={item:Item;position:number;count:number};
  const byCall=new Map<string,Occurrence>(),byResult=new Map<string,Occurrence>();
@@ -51,13 +52,17 @@ function normalizeGroups(input:unknown[],groups:Member[][]):unknown[]{
  if(!spans.length)return input;spans.sort((a,b)=>a.first-b.first);if(spans.some((s,i)=>i>0&&s.first<=spans[i-1]!.last))return input;
  const output:unknown[]=[];let cursor=0;for(const s of spans){output.push(...input.slice(cursor,s.first),...s.items);cursor=s.last+1;}output.push(...input.slice(cursor));return output;
 }
+/** Authenticate structural replay membership without signing customer payload contents. */
 export class TurnTokenCodec {
  private readonly keys:ReadonlyMap<string,Uint8Array>;
+ /** Validate and own an independent copy of the bounded signing-key ring. */
  constructor(keys:ReadonlyMap<string,Uint8Array>,private readonly activeKeyId:string){
   if(keys.size<1||keys.size>8||!keys.has(activeKeyId))throw Error('Missing active turn-membership key');
-  const owned=new Map<string,Uint8Array>();for(const [id,key] of keys){if(!/^[A-Za-z0-9]{1,12}$/.test(id)||key.length<32||key.length>64)throw Error('Invalid turn-membership key');owned.set(id,key.slice());}this.keys=owned;
+  const owned=new Map<string,Uint8Array>();for(const [id,key] of keys){if(!/^[A-Za-z0-9]{1,12}$/.test(id)||key.length<32||key.length>64)throw Error('Invalid turn-membership key');owned.set(id,Uint8Array.from(key));}this.keys=owned;
  }
+ /** Accept only an explicit principal and own-thread scope. */
  private scope(scope:unknown):Scope|undefined{if(!plain(scope)||!text(scope.principal)||!text(scope.thread))return;return{principal:scope.principal,thread:scope.thread};}
+ /** Bind the token header to its key, caller and thread using a domain-separated HMAC. */
  private tag(keyId:string,scope:Scope,header:string):Buffer|undefined{
   const key=this.keys.get(keyId);if(!key)return;
   return createHmac('sha256',key).update('opencodex.response-turn-membership.v1\0'+JSON.stringify([scope.principal,scope.thread,header])).digest().subarray(0,16);
@@ -71,6 +76,7 @@ export class TurnTokenCodec {
    return header+'_'+this.tag(keyId,bound,header)!.toString('base64url');
   }};
  }
+ /** Verify bounded item membership; malformed or mismatched scopes have no authority. */
  private verify(scope:Scope,item:Item):{group:string;ordinal:number}|undefined{
   if(typeof item.id!=='string'||item.id.length>128)return;
   const match=pattern.exec(item.id);if(!match)return;
