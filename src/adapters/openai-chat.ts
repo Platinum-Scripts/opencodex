@@ -1,3 +1,4 @@
+import { withRequiredChatToolResult } from "./openai-chat/required-tool-result";
 import { hasShrinkableOpenAIChatImages, normalizeOpenAIChatImages } from "./openai-chat-images";
 import { protectGlmSummaryBudget, resolveMaxTokens } from "./openai-chat/summary-budget";
 import { chatParallelToolCallsWireValue } from "./openai-chat/parallel-tool-calls";
@@ -91,7 +92,7 @@ function canSerializeOpenAIChatServiceTier(
 export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAdapter {
   let lastRequestedModelId: string | undefined;
   let freeformTools = new Map<string, FreeformToolIdentity>();
-  return withOpenAIChatToolNames(toolNames => ({
+  return withRequiredChatToolResult(withOpenAIChatToolNames(toolNames => ({
     name: "openai-chat",
 
     formatErrorBody: formatOpenAIChatErrorBody,
@@ -613,9 +614,9 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
           }
           bufferBytes = nextBufferBytes;
 
-          const lines = buffer.split("\n");
+          const lines = decoded.includes("\n") ? buffer.split("\n") : [buffer];
           buffer = lines.pop() ?? "";
-          const residualBytes = budgetEncoder.encode(buffer).byteLength;
+          const residualBytes = lines.length ? budgetEncoder.encode(buffer).byteLength : bufferBytes;
           const residualReservation = budget.reserveTransient(residualBytes, { kind: "live_transient" });
           residualReservation.commitRetained();
           budget.releaseRetained(bufferBytes, { kind: "live_transient" });
@@ -817,5 +818,5 @@ export function createOpenAIChatAdapter(provider: OcxProviderConfig): ProviderAd
         budget.releaseRetained(responseBytes, { kind: "retained_collectors" });
       }
     },
-  }));
+  })));
 }
