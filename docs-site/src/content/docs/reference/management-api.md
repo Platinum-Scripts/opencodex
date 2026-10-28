@@ -548,6 +548,10 @@ are rejected by name. `modelId` must be exact, without surrounding whitespace, c
 characters, excessive length, or a reserved object-property name. `contextWindow` must be
 `null` or a positive safe integer.
 
+When `responsesCustomTools` is `false`, native Responses compaction also lowers custom-tool
+history. History that cannot be lowered safely returns HTTP 400 with `invalid_request_error`
+before sending anything upstream.
+
 Every field is optional, and `null` **clears** the declaration rather than writing a default,
 which hands the fact back to the registry, the catalog, and the provider. An empty
 `inputModalities` array also clears, while an empty `reasoningEfforts` array is stored as an
@@ -556,7 +560,7 @@ Clearing `inputModalities` also removes the exact legacy `modelInputModalities` 
 model, so a restore cannot leave an older declaration in force; family keys shared with other
 models stay. An emptied per-model map is removed instead of left as `{}`. A request that changes nothing
 answers `changed: false` with the stored state. The receipt also reports `saved` (whether this
-request published config), `hasOverrides` (whether any of the four axes remains stored), and
+request published config), `hasOverrides` (whether any editable axis remains stored), and
 `catalogRefresh` (`committed`, `skipped`, or `failed`). These fields distinguish a no-op with
 stored declarations from a model with nothing to restore. A changed request persists atomically;
 an unpublished save failure leaves the live config unchanged. After publication the server

@@ -43,10 +43,6 @@ Native Codex: default context 500,000, long-context ceiling 872,000, default eff
 
 Per 1M tokens: $1.00 input, $0.05 cached input, $1.25 cache write (30 minutes), $5.00 output. Above 272,000 input tokens, the whole request uses 2× input/cache and 1.5× output: $2.00 / $0.10 / $2.50 / $7.50 respectively. Fast mode costs 2×.
 
-When `modelCapabilities[modelId].responsesCustomTools` is `false`, native Responses compaction
-also lowers custom-tool history. History that cannot be lowered safely returns HTTP 400
-with `invalid_request_error` before sending anything upstream.
-
 ## Context windows on custom providers
 
 When a custom provider omits a model's context window, OpenCodex can infer it from the bundled
