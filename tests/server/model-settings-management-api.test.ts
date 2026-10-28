@@ -108,6 +108,25 @@ function harness(config = fixture(), converge?: () => Promise<never>, save?: (sa
   return { call, config, persisted, get convergeCalls() { return convergeCalls; } };
 }
 
+test("custom-tool false, clear and invalid writes preserve sibling capability axes", async () => {
+  const config = fixture();
+  config.providers[PROVIDER]!.modelCapabilities = {
+    [MODEL]: { supportsReasoning: true, inputModalities: ["text"] },
+    "vendor/other": { responsesCustomTools: true },
+  };
+  const h = harness(config);
+  const body = { provider: PROVIDER, modelId: MODEL, responsesCustomTools: false };
+  expect(await (await h.call(body)).json()).toMatchObject({ saved: true, responsesCustomTools: false, hasOverrides: true });
+  expect(await (await h.call(body)).json()).toMatchObject({ saved: false, changed: false, responsesCustomTools: false });
+  expect((await h.call({ ...body, responsesCustomTools: "false" })).status).toBe(400);
+  expect(h.persisted).toHaveLength(1);
+  expect(await (await h.call({ ...body, responsesCustomTools: null })).json()).toMatchObject({ saved: true, responsesCustomTools: null, hasOverrides: true });
+  expect(config.providers[PROVIDER]!.modelCapabilities).toEqual({
+    [MODEL]: { supportsReasoning: true, inputModalities: ["text"] },
+    "vendor/other": { responsesCustomTools: true },
+  });
+});
+
 test("Claude defaults route previews, validates and applies with a stale-preview refusal", async () => {
   const config = fixture();
   config.claudeCode = { tierModels: { opus: "combo/opus", sonnet: "combo/sonnet", haiku: "combo/haiku" } };

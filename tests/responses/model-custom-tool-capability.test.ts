@@ -45,6 +45,25 @@ function effective(model: string): OcxProviderConfig {
 }
 
 describe("exact-model Responses custom-tool capability", () => {
+  test.each([false, true])("a captured %s declaration survives live edits and credential refresh", declared => {
+    const source = provider();
+    source.modelCapabilities!["claude-wire"]!.responsesCustomTools = declared;
+    const captured = captureRouteStaticPolicy("mixed", "claude-wire", source);
+    expect(Object.isFrozen(captured.model)).toBe(true);
+    expect(captured.model.supportsResponsesCustomTools).toBe(declared);
+    expect(captured.provenance.model.supportsResponsesCustomTools).toBe("operator-capability");
+    source.modelCapabilities!["claude-wire"]!.responsesCustomTools = !declared;
+    source.supportsResponsesCustomTools = !declared;
+    const refreshed = { ...source, apiKey: "replacement-fixture-key" };
+    const wire = resolveWireProtocolOverride("mixed", "claude-wire", refreshed, "responses", captured);
+    expect(wire.supportsResponsesCustomTools).toBe(declared);
+    expect(wire.apiKey).toBe("replacement-fixture-key");
+    expect(refreshed.supportsResponsesCustomTools).toBe(!declared);
+    const nextRoute = captureRouteStaticPolicy("mixed", "claude-wire", refreshed);
+    expect(resolveWireProtocolOverride("mixed", "claude-wire", refreshed, "responses", nextRoute)
+      .supportsResponsesCustomTools).toBe(!declared);
+  });
+
   test("one provider preserves GPT grammar and lowers Claude history without mutation", () => {
     const source = provider();
     const gpt = effective("gpt-wire");
@@ -124,6 +143,24 @@ describe("native compact uses the exact-model capability", () => {
     await removeCompactionFixture(home);
     if (previousHome === undefined) delete process.env.OPENCODEX_HOME;
     else process.env.OPENCODEX_HOME = previousHome;
+  });
+
+  test("a custom history collision is a client refusal without an upstream send", async () => {
+    let sends = 0;
+    globalThis.fetch = (async () => {
+      sends++;
+      return Response.json({ status: "completed", output: [{ type: "compaction", encrypted_content: "opaque-fixture" }] });
+    }) as typeof fetch;
+    const mixed = { ...provider(), supportsNativeCompactEndpoint: true, apiKey: "fixture-key" };
+    const config = { ...getDefaultConfig(), defaultProvider: "mixed", providers: { mixed } };
+    const body = baseCompactionBody({
+      ...rawBody("mixed/claude-wire"),
+      tools: [{ type: "function", name: "apply_patch", parameters: { type: "object", properties: {} } }],
+    });
+    const response = await handleResponsesCompact(compactionRequest(body), config, { model: "", provider: "" });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { type: "invalid_request_error", message: expect.stringContaining("custom_tool_compat") } });
+    expect(sends).toBe(0);
   });
 
   test("lowers a complete custom call/result history before native compaction", async () => {
