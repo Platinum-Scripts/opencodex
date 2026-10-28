@@ -19,6 +19,10 @@ import { handleAgentSettingsRoutes } from "../../src/server/management/agent-set
 import type { ManagementContext } from "../../src/server/management/context";
 import { readFileSync } from "node:fs";
 import { MANAGEMENT_JSON_BODY_MAX_BYTES, managementBodyTooLargeResponse } from "../../src/server/management/body";
+import { saveConfig } from "../../src/config";
+import { startServer } from "../../src/server";
+import { catalogConvergenceFactory } from "../helpers/catalog-convergence";
+import { remoteConfig } from "../helpers/management-auth-fixture";
 
 /**
  * `PUT /api/model-settings` writes per-model overrides onto a routed row.
@@ -125,6 +129,52 @@ test("custom-tool false, clear and invalid writes preserve sibling capability ax
     [MODEL]: { supportsReasoning: true, inputModalities: ["text"] },
     "vendor/other": { responsesCustomTools: true },
   });
+});
+
+test("custom-tool settings authenticate at the listener before saving or converging", async () => {
+  const oldData = process.env.OPENCODEX_API_AUTH_TOKEN;
+  const oldAdmin = process.env.OPENCODEX_ADMIN_AUTH_TOKEN;
+  process.env.OPENCODEX_API_AUTH_TOKEN = "model-data-fixture";
+  process.env.OPENCODEX_ADMIN_AUTH_TOKEN = "model-admin-fixture";
+  let server: ReturnType<typeof startServer> | undefined;
+  let saves = 0, convergences = 0;
+  let saved: OcxConfig | undefined;
+  try {
+    saveConfig(remoteConfig());
+    server = startServer(0, { managementApi: {
+      saveConfigPreservingClaudeCode: config => { saves++; saved = structuredClone(config); },
+      createManagementConvergeCodex: catalogConvergenceFactory(() => { convergences++; }),
+    } });
+    const url = new URL("/api/model-settings", server.url);
+    const call = (token?: string, origin = url.origin) => fetch(url, {
+      method: "PUT",
+      headers: { origin, "content-type": "application/json", ...(token ? { "x-opencodex-api-key": token } : {}) },
+      body: JSON.stringify({ provider: "test", modelId: "gpt-test", responsesCustomTools: false }),
+    });
+    for (const token of [undefined, "wrong-model-fixture", "model-data-fixture"]) {
+      const denied = await call(token);
+      expect(denied.status).toBe(401);
+      await denied.arrayBuffer();
+    }
+    const foreign = await call("model-admin-fixture", "https://foreign.example");
+    expect(foreign.status).toBe(403);
+    await foreign.arrayBuffer();
+    expect(saves).toBe(0);
+    expect(convergences).toBe(0);
+    const accepted = await call("model-admin-fixture");
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({ saved: true, responsesCustomTools: false });
+    expect(saves).toBe(1);
+    expect(convergences).toBe(1);
+    expect(saved?.providers.test?.modelCapabilities).toEqual({ "gpt-test": { responsesCustomTools: false } });
+  } finally {
+    try { await server?.stop(true); } finally {
+      if (oldData === undefined) delete process.env.OPENCODEX_API_AUTH_TOKEN;
+      else process.env.OPENCODEX_API_AUTH_TOKEN = oldData;
+      if (oldAdmin === undefined) delete process.env.OPENCODEX_ADMIN_AUTH_TOKEN;
+      else process.env.OPENCODEX_ADMIN_AUTH_TOKEN = oldAdmin;
+    }
+  }
 });
 
 test("Claude defaults route previews, validates and applies with a stale-preview refusal", async () => {

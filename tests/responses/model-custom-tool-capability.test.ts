@@ -163,6 +163,32 @@ describe("native compact uses the exact-model capability", () => {
     expect(sends).toBe(0);
   });
 
+  test("a native compact retry keeps the captured policy after a live model edit", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const mixed = { ...provider(), supportsNativeCompactEndpoint: true, apiKey: "fixture-key",
+      transientRetryOn5xx: { attempts: 2 } };
+    const config = { ...getDefaultConfig(), defaultProvider: "mixed", providers: { mixed } };
+    globalThis.fetch = (async (_url, init) => {
+      sent.push(JSON.parse(String(init?.body)));
+      if (sent.length === 1) {
+        mixed.modelCapabilities!["claude-wire"]!.responsesCustomTools = true;
+        return Response.json({ error: "fixture overload" }, { status: 503 });
+      }
+      return Response.json({ status: "completed", output: [{ type: "compaction", encrypted_content: "opaque-fixture" }] });
+    }) as typeof fetch;
+    const response = await handleResponsesCompact(
+      compactionRequest(baseCompactionBody(rawBody("mixed/claude-wire"))), config, { model: "", provider: "" },
+    );
+    expect(response.status).toBe(200);
+    await response.arrayBuffer();
+    expect(sent).toHaveLength(2);
+    for (const body of sent) {
+      expect(body.tools).toEqual([expect.objectContaining({ type: "function", name: "apply_patch" })]);
+      expect((body.input as Array<{ type: string }>).map(item => item.type)).toEqual(["function_call", "function_call_output"]);
+    }
+    expect(mixed.modelCapabilities!["claude-wire"]!.responsesCustomTools).toBe(true);
+  });
+
   test("lowers a complete custom call/result history before native compaction", async () => {
     let sent: Record<string, unknown> = {};
     globalThis.fetch = (async (_url, init) => {
